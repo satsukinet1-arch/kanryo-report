@@ -65,6 +65,8 @@ textarea{min-height:110px;resize:vertical;line-height:1.6}
 .case h3{margin:2px 0;font-size:17px;line-height:1.35}
 .case .d{font-size:13px;color:var(--sub)}
 .st{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;color:#fff;white-space:nowrap;vertical-align:1px}
+.st.exp{background:#4f6f9a}.st.arc{background:#5d6b64}
+.month{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.month button{min-height:40px;border:1.5px solid var(--line);border-radius:10px;background:var(--bg);font-size:13px;padding:0 10px;font-weight:700}
 .st.draft{background:#7d8883}.st.pdf{background:var(--mid)}.st.sent{background:var(--after)}
 details.co{border:1.5px dashed var(--line);border-radius:12px;padding:4px 14px;margin:18px 0}
 details.co summary{min-height:44px;display:flex;align-items:center;font-weight:700;cursor:pointer}
@@ -149,8 +151,13 @@ details.co summary{min-height:44px;display:flex;align-items:center;font-weight:7
   <div class="stats" id="stats"></div>
   <div class="f"><input type="search" id="q" placeholder="物件名・工事名・提出先・箇所で検索" aria-label="検索"></div>
   <div class="seg" id="fStatus" style="margin-bottom:6px"><button type="button" data-v="all" class="on">すべて</button><button type="button" data-v="draft">作成中</button><button type="button" data-v="pdf">未送信</button><button type="button" data-v="sent">送信済</button></div>
+  <div class="result" id="freeBox" hidden>
+    <p style="margin:0" id="freeMsg"></p>
+    <div class="row"><button class="btn main" type="button" id="freeYes">スマホの写真を消す</button><button class="btn" type="button" id="freeNo">そのまま残す</button></div>
+    <p class="note">一覧・物件名・メモは残ります。写真が必要になったら、書き出したZIPを「PCのZIPから戻す」で取り込めば元どおりです。</p>
+  </div>
   <div id="clist"></div>
-  <div class="row" style="margin-top:12px"><button class="btn" type="button" id="csv">一覧をCSV（エクセル）で保存</button></div>
+  <div class="row" style="margin-top:12px"><button class="btn" type="button" id="csv">一覧をCSV（エクセル）で保存</button><label class="btn" style="display:inline-flex;align-items:center;position:relative">PCのZIPから戻す<input type="file" id="inZip" accept=".zip,application/zip" style="position:absolute;inset:0;opacity:0;width:100%"></label></div>
   <p class="note" id="usage"></p>
 </section>
 
@@ -270,7 +277,7 @@ function renderTE(){$('#tedList').innerHTML=TE.map(([n,t],i)=>`<div class="ted" 
 const LOCS=['1F 共用廊下','エントランス','共用階段','機械室','電気室','ポンプ室','受水槽室','屋上','駐車場','駐輪場','管理事務室','ゴミ置場','外壁','各住戸'];
 const FIELDS=['cust','hon','custPerson','custMail','prop','addr','title','d1','d2','work','note'];
 const COF=['co','me','coAddr','coTel','coMail'];
-const S={id:null,status:'draft',created:null,sentAt:null,fStatus:'all',types:[],photos:[],cat:'before',step:1,touched:{title:false,work:false},mailTouched:false};
+const S={archived:false,exportedAt:null,id:null,status:'draft',created:null,sentAt:null,fStatus:'all',types:[],photos:[],cat:'before',step:1,touched:{title:false,work:false},mailTouched:false};
 const opt={layout:'pair',q:'std',board:false};
 let pdfBlob=null,pdfName='',pageUrls=[],lastDel=null,dl=null;
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -283,6 +290,7 @@ const period=f=>f.d2&&f.d2!==f.d1?`${fmtD(f.d1)}〜${fmtD(f.d2)}`:fmtD(f.d1);
 const readF=()=>Object.fromEntries(FIELDS.map(k=>[k,$('#'+k).value.trim()]));
 const readCo=()=>Object.fromEntries(COF.map(k=>[k,$('#'+k).value.trim()]));
 const toBlob=(c,t,q)=>new Promise(r=>c.toBlob(r,t,q));
+const safeN=s=>String(s||'').replace(/[\\/:*?"<>|\s]+/g,'').slice(0,40);
 const uid=()=>Math.random().toString(36).slice(2,10);
 
 /* toast */
@@ -304,8 +312,8 @@ async function makeThumb(){const p=S.photos.find(q=>q.cat==='after')||S.photos[0
 async function saveNow(){clearTimeout(dt);const f=readF();
  if(!(f.prop||f.cust||f.title||S.photos.length))return;
  if(!S.id){S.id=uid();S.created=Date.now()}
- await kvSet('case:'+S.id,{id:S.id,f,types:S.types,touched:S.touched,status:S.status,created:S.created,sentAt:S.sentAt,photos:S.photos.map(({id,cat,cap,blob,t})=>({id,cat,cap,blob,t}))});
- const e={id:S.id,prop:f.prop,addr:f.addr,title:f.title,cust:f.cust,d1:f.d1,d2:f.d2,status:S.status,created:S.created,sentAt:S.sentAt,updated:Date.now(),n:S.photos.length,thumb:await makeThumb(),caps:S.photos.map(p=>p.cap).filter(Boolean).join(' ')};
+ await kvSet('case:'+S.id,{id:S.id,f,types:S.types,touched:S.touched,status:S.status,archived:S.archived,exportedAt:S.exportedAt,created:S.created,sentAt:S.sentAt,photos:S.photos.map(({id,cat,cap,blob,t})=>({id,cat,cap,blob,t}))});
+ const e={id:S.id,prop:f.prop,addr:f.addr,title:f.title,cust:f.cust,d1:f.d1,d2:f.d2,status:S.status,archived:S.archived,exportedAt:S.exportedAt,created:S.created,sentAt:S.sentAt,updated:Date.now(),n:S.archived&&!S.photos.length?((IDX.find(x=>x.id===S.id)||{}).n||0):S.photos.length,thumb:await makeThumb(),caps:S.photos.map(p=>p.cap).filter(Boolean).join(' ')};
  IDX=IDX.filter(x=>x.id!==S.id);IDX.push(e);await kvSet('index',IDX);await kvSet('current',S.id);
  if(!persisted){persisted=true;try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(_){}}
  if(S.step===0)renderList()}
@@ -359,7 +367,7 @@ function renderPhotos(){
   <div class="thumb"><img src="${p.url}" alt="${CATS[p.cat].n} No.${i+1}"><span class="no" style="background:${CATS[p.cat].c}">No.${i+1}</span></div>
   <div class="phb"><input type="text" class="cap" value="${esc(p.cap)}" placeholder="箇所・内容（例：3F 廊下 感知器）" list="locs" aria-label="写真の説明">
   <div class="acts"><button type="button" data-a="up" aria-label="前へ移動">↑</button><button type="button" data-a="down" aria-label="後ろへ移動">↓</button><button type="button" data-a="rot">回転</button><select data-a="cat" aria-label="区分を変える">${opts(p)}</select><button type="button" data-a="del" class="del">削除</button></div></div></article>`).join('')
- :`<p class="empty">${CATS[S.cat].n}の写真はまだありません。<br>「撮影する」か「写真を選ぶ」で追加してください。</p>`;
+ :S.archived?`<p class="empty">この案件の写真はPCへ移動済みです。<br>一覧の「PCのZIPから戻す」で元に戻せます。</p>`:`<p class="empty">${CATS[S.cat].n}の写真はまだありません。<br>「撮影する」か「写真を選ぶ」で追加してください。</p>`;
  $('#locs').innerHTML=[...new Set([...S.photos.map(p=>p.cap).filter(Boolean),...LOCS])].map(v=>`<option value="${esc(v)}">`).join('');
  updateHead()}
 function move(p,dir){const same=S.photos.map((q,i)=>q.cat===p.cat?i:-1).filter(i=>i>=0);const at=same.indexOf(S.photos.indexOf(p));const to=same[at+dir];if(to===undefined)return;
@@ -420,9 +428,7 @@ async function buildPdf(pages){
  push(t+`trailer\n<< /Size ${total+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
  return new Blob(parts,{type:'application/pdf'})}
 const chunk=(a,n)=>{const o=[];for(let i=0;i<a.length;i+=n)o.push(a.slice(i,i+n));return o};
-async function makePdf(){
- const btn=$('#make');btn.disabled=true;btn.textContent='作成中…';
- try{
+async function renderReport(prog){
   const f=readF(),co=readCo();const Q={light:{w:1000,q:.62},std:{w:1240,q:.76},high:{w:1654,q:.86}}[opt.q];
   const by=k=>S.photos.filter(p=>p.cat===k);const B=by('before'),Mi=by('mid'),A=by('after');
   const cells=(arr,cat)=>arr.map((p,i)=>({p,cat,no:i+1}));
@@ -436,14 +442,19 @@ async function makePdf(){
   try{await Promise.all([document.fonts.load(FT(26),txt),document.fonts.load(FT(26,1),txt)])}catch(e){}
   const bm=new Map();for(const p of S.photos)bm.set(p.id,await createImageBitmap(p.blob));
   const pages=[];const N=specs.length;
-  for(let i=0;i<N;i++){btn.textContent=`作成中… ${i+1} / ${N}ページ`;
+  for(let i=0;i<N;i++){prog&&prog(i+1,N);
    const c=document.createElement('canvas');c.width=Q.w;c.height=Math.round(Q.w*1754/1240);const x=c.getContext('2d');
    x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);const k=Q.w/1240;x.setTransform(k,0,0,k,0,0);
    if(specs[i].kind==='cover')drawCover(x,f,co,counts,i+1,N);else drawRows(x,specs[i],f,co,i+1,N,bm);
    pages.push({blob:await toBlob(c,'image/jpeg',Q.q),w:c.width,h:c.height});await new Promise(r=>setTimeout(r,0))}
   bm.forEach(b=>b.close&&b.close());
-  pdfBlob=await buildPdf(pages);
-  const safe=s=>s.replace(/[\\/:*?"<>|\s]+/g,'');pdfName=`工事完了報告書_${safe(f.prop||'物件')}_${(f.d2||f.d1||today()).replace(/-/g,'')}.pdf`;
+  return {blob:await buildPdf(pages),pages,name:`工事完了報告書_${safeN(f.prop)||'物件'}_${(f.d2||f.d1||today()).replace(/-/g,'')}.pdf`}}
+async function makePdf(){
+ if(S.archived&&!S.photos.length){toast('この案件の写真はPCへ移動済みです。ZIPから戻すとPDFを作り直せます');return}
+ const btn=$('#make');btn.disabled=true;btn.textContent='作成中…';
+ try{
+  const r=await renderReport((i,N)=>btn.textContent=`作成中… ${i} / ${N}ページ`);const pages=r.pages,N=pages.length;
+  pdfBlob=r.blob;pdfName=r.name;
   pageUrls.forEach(u=>URL.revokeObjectURL(u));pageUrls=pages.map(p=>URL.createObjectURL(p.blob));
   $('#pv').innerHTML=pageUrls.map((u,i)=>`<img src="${u}" alt="${i+1}ページ目">`).join('');
   const mb=pdfBlob.size/1048576;$('#sz').textContent=mb<1?Math.max(1,Math.round(pdfBlob.size/1024))+'KB':mb.toFixed(1)+'MB';
@@ -476,7 +487,7 @@ async function copy(text,label){try{await navigator.clipboard.writeText(text);to
  catch(e){const t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();let ok=false;try{ok=document.execCommand('copy')}catch(_){}t.remove();toast(ok?label+'をコピーしました':'コピーできませんでした。長押しで選択してください')}}
 function checkWarn(){const f=readF(),w=[];const n=k=>S.photos.filter(p=>p.cat===k).length;
  if(!f.prop)w.push('物件名が空です');if(!f.cust)w.push('提出先が空です');if(!readCo().co)w.push('自社の会社名が未入力です（①の下）');
- if(!S.photos.length)w.push('写真がまだありません');
+ if(S.archived&&!S.photos.length)w.push('写真はPCへ移動済みです（一覧の「PCのZIPから戻す」で戻せます）');else if(!S.photos.length)w.push('写真がまだありません');
  else if(opt.layout==='pair'&&n('before')!==n('after'))w.push(`作業前${n('before')}枚・作業後${n('after')}枚で数が違います（足りない側は「写真なし」になります）`);
  $('#warn').textContent=w.length?'確認：'+w.join('／'):''}
 
@@ -527,13 +538,13 @@ $('#reMail').addEventListener('click',()=>{S.mailTouched=false;buildMail();toast
 ['#mailSubj','#mailBody'].forEach(s=>$(s).addEventListener('input',()=>{S.mailTouched=true;updMailto()}));
 function setFields(f){FIELDS.forEach(k=>$('#'+k).value=(f&&f[k])||'');if(!$('#hon').value)$('#hon').value='御中'}
 function resetState(){S.photos.forEach(p=>URL.revokeObjectURL(p.url));S.photos=[];S.types=[];S.touched={title:false,work:false};S.mailTouched=false;S.cat='before';
- S.id=null;S.status='draft';S.created=null;S.sentAt=null;S.thumb=null;S.thumbId=null;dirty()}
+ S.id=null;S.status='draft';S.created=null;S.sentAt=null;S.archived=false;S.exportedAt=null;S.thumb=null;S.thumbId=null;dirty()}
 async function newCase(seed){await saveNow();resetState();setFields(seed&&seed.f);$('#d1').value=today();$('#d2').value='';
  if(seed){S.types=(seed.types||[]).filter(k=>k in TYPES);S.touched=seed.touched||S.touched}
  renderTypes();renderPhotos();kvDel('current');go(1);toast(seed?'同じ物件で新しい案件を作りました':'新しい案件を始めました')}
 async function loadCase(id,quiet){const d=await kvGet('case:'+id);if(!d){toast('この案件を開けませんでした');return false}
  if(id!==S.id)await saveNow();resetState();setFields(d.f);
- S.id=d.id;S.status=d.status||'draft';S.created=d.created;S.sentAt=d.sentAt||null;S.types=(d.types||[]).filter(k=>k in TYPES);S.touched=d.touched||S.touched;
+ S.id=d.id;S.archived=!!d.archived;S.exportedAt=d.exportedAt||null;S.status=d.status||'draft';S.created=d.created;S.sentAt=d.sentAt||null;S.types=(d.types||[]).filter(k=>k in TYPES);S.touched=d.touched||S.touched;
  S.photos=(d.photos||[]).filter(p=>p.blob).map(p=>({...p,url:URL.createObjectURL(p.blob)}));
  renderTypes();renderPhotos();stLine();kvSet('current',id);if(!quiet)toast(`「${d.f.prop||'案件'}」を開きました`);return true}
 function stLine(){$('#stLine').innerHTML=`状態：<span class="st ${S.status}">${ST[S.status]}</span>${S.sentAt?'　送信日 '+fmtD(locD(S.sentAt)):''}`;
@@ -547,11 +558,11 @@ function renderList(){
  $('#stats').innerHTML=`<div class="stat"><b>${thisM.length}</b><span>今月の件数</span></div><div class="stat"><b>${all.filter(e=>e.status!=='sent').length}</b><span>未送信・作成中</span></div><div class="stat"><b>${thisM.filter(e=>e.status==='sent').length}</b><span>今月の送信済</span></div>`;
  const L=all.filter(e=>(fs==='all'||e.status===fs)&&(!q||[e.prop,e.title,e.cust,e.addr,e.caps].join(' ').toLowerCase().includes(q)));
  let html='',cur='';
- for(const e of L){const m=ym(e);if(m!==cur){cur=m;const [y,mo]=m.split('-');html+=`<h3 class="month">${y}年${+mo}月（${L.filter(x=>ym(x)===m).length}件）</h3>`}
+ for(const e of L){const m=ym(e);if(m!==cur){cur=m;const [y,mo]=m.split('-');html+=`<h3 class="month"><span>${y}年${+mo}月（${L.filter(x=>ym(x)===m).length}件）</span><button type="button" data-m="${m}">この月をPCへ書き出し</button></h3>`}
   html+=`<article class="case${e.id===S.id?' cur':''}" data-id="${e.id}">${e.thumb?`<img class="im" src="${e.thumb}" alt="">`:'<div class="im"></div>'}
-  <div><div class="d">${e.d1?fmtD(e.d1)+(e.d2&&e.d2!==e.d1?'〜':''):'日付なし'}　<span class="st ${e.status}">${ST[e.status]}</span>${e.id===S.id?'　<b>編集中</b>':''}</div>
+  <div><div class="d">${e.d1?fmtD(e.d1)+(e.d2&&e.d2!==e.d1?'〜':''):'日付なし'}　<span class="st ${e.status}">${ST[e.status]}</span>${e.archived?' <span class="st arc">写真はPCへ</span>':e.exportedAt?' <span class="st exp">PC保存済</span>':''}${e.id===S.id?'　<b>編集中</b>':''}</div>
   <h3>${esc(e.prop||'（物件名なし）')}</h3><div class="d">${esc(e.title||'工事件名なし')}${e.cust?'／'+esc(e.cust):''}／写真${e.n}枚</div>
-  <div class="acts" style="margin-top:6px"><button type="button" data-c="open">開く</button><button type="button" data-c="dup">同じ物件で新規</button><button type="button" data-c="del" class="del">削除</button></div></div></article>`}
+  <div class="acts" style="margin-top:6px"><button type="button" data-c="open">開く</button><button type="button" data-c="exp">PCへ書き出し</button><button type="button" data-c="dup">同じ物件で新規</button><button type="button" data-c="del" class="del">削除</button></div></div></article>`}
  $('#clist').innerHTML=html||`<p class="empty">${IDX.length?'条件に合う報告書がありません。':'まだ報告書がありません。<br>案件を作ると、ここに自動で並びます。'}</p>`;
  (async()=>{try{const est=await navigator.storage.estimate();$('#usage').textContent=`この端末に保存中：${IDX.length}件・約${Math.max(1,Math.round(est.usage/1048576))}MB。写真もこの端末の中だけに保存されています。`}catch(e){$('#usage').textContent=`この端末に保存中：${IDX.length}件`}})()}
 async function saveFile(name,blob){
@@ -559,11 +570,65 @@ async function saveFile(name,blob){
  const file=new File([blob],name,{type:blob.type});
  if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title:name});return}catch(e){if(e&&e.name==='AbortError')return}}
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),60000);toast('ダウンロードしました')}
+let jszipP=null;
+function loadZip(){return jszipP||(jszipP=new Promise((res,rej)=>{if(window.JSZip)return res(window.JSZip);const sc=document.createElement('script');sc.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+ sc.onload=()=>res(window.JSZip);sc.onerror=()=>{jszipP=null;sc.remove();rej(new Error('ZIP機能を読み込めませんでした。電波の良い所でもう一度お試しください'))};document.head.appendChild(sc)}))}
+const caseBase=f=>`${f.d1||today()}_${safeN(f.prop)||'物件'}${f.title?'_'+safeN(f.title):''}`;
+async function addCaseToZip(zip,prog){
+ const f=readF();let base=caseBase(f);if(zip.files[base+'/']){let k=2;while(zip.files[`${base}_${k}/`])k++;base=`${base}_${k}`}const dir=zip.folder(base);
+ const r=await renderReport(prog);dir.file(r.name,r.blob);
+ const FN={before:'1_作業前',mid:'2_作業中',after:'3_作業後'},meta=[];
+ for(const k of Object.keys(CATS))S.photos.filter(p=>p.cat===k).forEach((p,i)=>{const fn=`${FN[k]}/${String(i+1).padStart(2,'0')}${p.cap?'_'+safeN(p.cap):''}.jpg`;dir.file(fn,p.blob);meta.push({id:p.id,cat:p.cat,cap:p.cap,t:p.t,file:fn})});
+ dir.file('案件データ.json',JSON.stringify({app:'kanryo-report',v:1,id:S.id,f,types:S.types,touched:S.touched,status:S.status,created:S.created,sentAt:S.sentAt,photos:meta},null,1));
+ return base}
+async function updateCase(id,fn){const d=await kvGet('case:'+id);if(!d)return;fn(d);await kvSet('case:'+id,d);const e=IDX.find(x=>x.id===id);if(e){e.archived=!!d.archived;e.exportedAt=d.exportedAt||null}await kvSet('index',IDX)}
+let pendingFree=[];
+async function exportCases(ids,zipName){
+ let JSZip;try{JSZip=await loadZip()}catch(err){toast(err.message);return}
+ await saveNow();const back=S.id,zip=new JSZip();let done=[],base='';
+ try{for(let i=0;i<ids.length;i++){if(!await loadCase(ids[i],true))continue;if(S.archived&&!S.photos.length)continue;
+   base=await addCaseToZip(zip,(p,N)=>toast(`PCへ書き出し中… ${ids.length>1?(i+1)+' / '+ids.length+'件目 ':''}${p} / ${N}ページ`));done.push(ids[i])}
+  if(!done.length){toast('書き出せる案件がありませんでした');return}
+  toast('ZIPファイルにまとめています…');
+  const blob=await zip.generateAsync({type:'blob',compression:'STORE'});
+  const name=zipName||`${base}.zip`;
+  if(back)await loadCase(back,true);else{resetState();setFields(null);$('#d1').value=today();renderTypes();renderPhotos()}
+  await saveFile(name,blob);
+  const now=Date.now();for(const id of done)await updateCase(id,d=>{d.exportedAt=now});if(done.includes(S.id))S.exportedAt=now;
+  pendingFree=done;$('#freeMsg').innerHTML=`<b>${done.length}件</b>を「${esc(name)}」に書き出しました（約${Math.max(1,Math.round(blob.size/1048576))}MB）。PCへ移せたら、スマホの写真を消して容量をあけられます。`;
+  $('#freeBox').hidden=false;if(S.step!==0)go(0);renderList();$('#freeBox').scrollIntoView({behavior:'smooth',block:'center'})
+ }catch(err){toast('書き出しに失敗しました：'+(err&&err.message||err));if(back&&S.id!==back)await loadCase(back,true)}}
+async function freeSpace(ids){
+ for(const id of ids)await updateCase(id,d=>{d.photos=[];d.archived=true});
+ if(ids.includes(S.id)){S.photos.forEach(p=>URL.revokeObjectURL(p.url));S.photos=[];S.archived=true;dirty();renderPhotos()}
+ $('#freeBox').hidden=true;pendingFree=[];renderList();toast(`${ids.length}件の写真をスマホから消しました`)}
+async function importZip(file){
+ let JSZip;try{JSZip=await loadZip()}catch(err){toast(err.message);return}
+ try{toast('ZIPを読み込んでいます…');const zip=await JSZip.loadAsync(file);
+  const metas=Object.keys(zip.files).filter(n=>/(^|\/)案件データ\.json$/.test(n));
+  if(!metas.length){toast('このZIPには案件データが入っていません');return}
+  await saveNow();const back=S.id;let n=0;
+  for(const mp of metas){const pre=mp.slice(0,mp.length-'案件データ.json'.length);const d=JSON.parse(await zip.file(mp).async('string'));
+   const photos=[];for(const m of d.photos||[]){const zf=zip.file(pre+m.file);if(!zf)continue;const blob=new Blob([await zf.async('arraybuffer')],{type:'image/jpeg'});photos.push({id:m.id||uid(),cat:m.cat,cap:m.cap||'',t:m.t||0,blob})}
+   const id=d.id||uid();
+   await kvSet('case:'+id,{id,f:d.f,types:d.types||[],touched:d.touched||{title:true,work:true},status:d.status||'pdf',archived:false,exportedAt:Date.now(),created:d.created||Date.now(),sentAt:d.sentAt||null,photos});
+   if(await loadCase(id,true)){await saveNow();n++}}
+  if(back&&back!==S.id)await loadCase(back,true);
+  renderList();toast(`${n}件をZIPから戻しました`)}
+ catch(err){toast('ZIPを読み込めませんでした：'+(err&&err.message||err))}}
+$('#freeYes').addEventListener('click',()=>pendingFree.length&&freeSpace(pendingFree));
+$('#freeNo').addEventListener('click',()=>{$('#freeBox').hidden=true;pendingFree=[]});
+$('#inZip').addEventListener('change',e=>{if(e.target.files[0])importZip(e.target.files[0]);e.target.value=''});
 $('#newCase').addEventListener('click',()=>newCase());
 $('#q').addEventListener('input',renderList);
 $('#fStatus').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;S.fStatus=b.dataset.v;$$('#fStatus button').forEach(x=>x.classList.toggle('on',x===b));renderList()});
-$('#clist').addEventListener('click',async e=>{const b=e.target.closest('button[data-c]');if(!b)return;const id=b.closest('.case').dataset.id;const c=b.dataset.c;
+$('#clist').addEventListener('click',async e=>{const mb=e.target.closest('button[data-m]');
+ if(mb){const m=mb.dataset.m;const ids=IDX.filter(x=>ym(x)===m&&!x.archived).map(x=>x.id);if(!ids.length){toast('この月は書き出す写真がありません（移動済み）');return}
+  const [y,mo]=m.split('-');await exportCases(ids,`工事報告書_${y}年${+mo}月.zip`);return}
+ const b=e.target.closest('button[data-c]');if(!b)return;const id=b.closest('.case').dataset.id;const c=b.dataset.c;
  if(c==='open'){const e2=IDX.find(x=>x.id===id);if(await loadCase(id))go(e2&&e2.status!=='draft'?3:1)}
+ if(c==='exp'){const e2=IDX.find(x=>x.id===id);if(e2&&e2.archived){toast('この案件の写真はすでにPCへ移動済みです');return}
+  await exportCases([id],null);return}
  if(c==='dup'){const d=await kvGet('case:'+id);if(d){const f={...d.f};['d1','d2','note'].forEach(k=>f[k]='');newCase({f,types:d.types,touched:d.touched})}}
  if(c==='del'){if(Date.now()-(+b.dataset.armed||0)>3000){b.dataset.armed=Date.now();b.textContent='もう一度押すと削除';setTimeout(()=>{b.textContent='削除'},3000);return}
   await kvDel('case:'+id);IDX=IDX.filter(x=>x.id!==id);await kvSet('index',IDX);
