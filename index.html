@@ -68,6 +68,7 @@ textarea{min-height:110px;resize:vertical;line-height:1.6}
 .st.exp{background:#4f6f9a}.st.arc{background:#5d6b64}
 .month{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.month button{min-height:40px;border:1.5px solid var(--line);border-radius:10px;background:var(--bg);font-size:13px;padding:0 10px;font-weight:700}
 .st.draft{background:#7d8883}.st.pdf{background:var(--mid)}.st.sent{background:var(--after)}
+.pcchk{border:1.5px solid var(--line);border-radius:10px;padding:2px 12px}.pcchk summary{min-height:44px;display:flex;align-items:center;font-weight:700;cursor:pointer}.pcchk ol{margin:4px 0 6px;padding-left:1.4em;font-size:15px}
 details.co{border:1.5px dashed var(--line);border-radius:12px;padding:4px 14px;margin:18px 0}
 details.co summary{min-height:44px;display:flex;align-items:center;font-weight:700;cursor:pointer}
 .tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:12px}
@@ -153,7 +154,11 @@ details.co summary{min-height:44px;display:flex;align-items:center;font-weight:7
   <div class="seg" id="fStatus" style="margin-bottom:6px"><button type="button" data-v="all" class="on">すべて</button><button type="button" data-v="draft">作成中</button><button type="button" data-v="pdf">未送信</button><button type="button" data-v="sent">送信済</button></div>
   <div class="result" id="freeBox" hidden>
     <p style="margin:0" id="freeMsg"></p>
-    <div class="row"><button class="btn main" type="button" id="freeYes">スマホの写真を消す</button><button class="btn" type="button" id="freeNo">そのまま残す</button></div>
+    <p style="margin:0;font-weight:700">① パソコンへ送る</p>
+    <div class="row"><button class="btn main" type="button" id="shareZip">Googleドライブに保存</button></div>
+    <p class="note" style="margin:0">共有の一覧から「ドライブ」を選んで保存します。パソコンで drive.google.com を開くと、同じファイルが見られます。</p>
+    <p style="margin:6px 0 0;font-weight:700">② パソコンに移せたら</p>
+    <div class="row"><button class="btn" type="button" id="freeYes">スマホの写真を消す</button><button class="btn" type="button" id="freeNo">そのまま残す</button></div>
     <p class="note">一覧・物件名・メモは残ります。写真が必要になったら、書き出したZIPを「PCのZIPから戻す」で取り込めば元どおりです。</p>
   </div>
   <div id="clist"></div>
@@ -234,6 +239,16 @@ details.co summary{min-height:44px;display:flex;align-items:center;font-weight:7
     <div class="size">できあがり：<b id="sz">-</b>　<span id="pg"></span></div>
     <div class="row"><button class="btn main" type="button" id="save">PDFを保存・共有</button><button class="btn" type="button" id="markSent">送信済みにする</button></div>
     <p class="note" id="stLine"></p>
+    <details class="pcchk"><summary>パソコンで確認してから送るには</summary>
+      <ol>
+        <li>「PDFを保存・共有」→「Gmail」を選びます。</li>
+        <li>宛先を入れて、件名・本文をコピーして貼り付けます。</li>
+        <li><b>送信せずに</b>、左上の「←」で戻ります（下書きに保存されます）。</li>
+        <li>パソコンでGmailを開き、左の「下書き」から確認して送信します。</li>
+        <li>送ったら、ここで「送信済みにする」を押します。</li>
+      </ol>
+      <p class="note">スマホとパソコンで同じGmailを使っている必要があります。</p>
+    </details>
     <p class="note" id="saveNote">保存したPDFは、Gmailの「添付（クリップのマーク）」→「ファイルを添付」→「ダウンロード」から選べます。</p>
     <div id="pv" aria-label="ページのプレビュー"></div>
   </div>
@@ -582,7 +597,7 @@ async function addCaseToZip(zip,prog){
  dir.file('案件データ.json',JSON.stringify({app:'kanryo-report',v:1,id:S.id,f,types:S.types,touched:S.touched,status:S.status,created:S.created,sentAt:S.sentAt,photos:meta},null,1));
  return base}
 async function updateCase(id,fn){const d=await kvGet('case:'+id);if(!d)return;fn(d);await kvSet('case:'+id,d);const e=IDX.find(x=>x.id===id);if(e){e.archived=!!d.archived;e.exportedAt=d.exportedAt||null}await kvSet('index',IDX)}
-let pendingFree=[];
+let pendingFree=[],lastZip=null;
 async function exportCases(ids,zipName){
  let JSZip;try{JSZip=await loadZip()}catch(err){toast(err.message);return}
  await saveNow();const back=S.id,zip=new JSZip();let done=[],base='';
@@ -593,9 +608,9 @@ async function exportCases(ids,zipName){
   const blob=await zip.generateAsync({type:'blob',compression:'STORE'});
   const name=zipName||`${base}.zip`;
   if(back)await loadCase(back,true);else{resetState();setFields(null);$('#d1').value=today();renderTypes();renderPhotos()}
-  await saveFile(name,blob);
+  lastZip={name,blob};await saveFile(name,blob);
   const now=Date.now();for(const id of done)await updateCase(id,d=>{d.exportedAt=now});if(done.includes(S.id))S.exportedAt=now;
-  pendingFree=done;$('#freeMsg').innerHTML=`<b>${done.length}件</b>を「${esc(name)}」に書き出しました（約${Math.max(1,Math.round(blob.size/1048576))}MB）。PCへ移せたら、スマホの写真を消して容量をあけられます。`;
+  pendingFree=done;$('#freeMsg').innerHTML=`<b>${done.length}件</b>を「${esc(name)}」に書き出しました（約${Math.max(1,Math.round(blob.size/1048576))}MB）。下のボタンでGoogleドライブに保存してください。`;
   $('#freeBox').hidden=false;if(S.step!==0)go(0);renderList();$('#freeBox').scrollIntoView({behavior:'smooth',block:'center'})
  }catch(err){toast('書き出しに失敗しました：'+(err&&err.message||err));if(back&&S.id!==back)await loadCase(back,true)}}
 async function freeSpace(ids){
@@ -616,6 +631,9 @@ async function importZip(file){
   if(back&&back!==S.id)await loadCase(back,true);
   renderList();toast(`${n}件をZIPから戻しました`)}
  catch(err){toast('ZIPを読み込めませんでした：'+(err&&err.message||err))}}
+$('#shareZip').addEventListener('click',async()=>{if(!lastZip)return;const file=new File([lastZip.blob],lastZip.name,{type:'application/zip'});
+ if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title:lastZip.name});return}catch(e){if(e&&e.name==='AbortError')return}}
+ await saveFile(lastZip.name,lastZip.blob)});
 $('#freeYes').addEventListener('click',()=>pendingFree.length&&freeSpace(pendingFree));
 $('#freeNo').addEventListener('click',()=>{$('#freeBox').hidden=true;pendingFree=[]});
 $('#inZip').addEventListener('change',e=>{if(e.target.files[0])importZip(e.target.files[0]);e.target.value=''});
